@@ -54,7 +54,8 @@ sync_files() {
     [[ -e $repo/$f ]] && cp -R "$repo/$f" "$staging/"
   done
   find "$staging" \( -name '*.swp' -o -name '*~' -o -name node_modules \) -prune -exec rm -rf {} +
-  omarchy plugin validate "$staging" >/dev/null
+  # Explicit `|| return`: errexit is off when this runs inside `sync_files && …`.
+  omarchy plugin validate "$staging" >/dev/null || { echo "plugin validation failed; not installed" >&2; return 1; }
 
   local parked="$plugins/.$id.old"
   [[ -d $target ]] && mv "$target" "$parked"

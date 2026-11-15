@@ -100,7 +100,7 @@ Rectangle {
         anchors.verticalCenter: parent.verticalCenter
         showLabel: false
         value: root.group ? root.group.stream_id : ""
-        options: root.service ? root.service.server.streams.map(function(s) { return { value: s.id, label: s.id } }) : []
+        options: root.service ? root.service.server.streams.map(function(s) { return { value: s.id, label: Model.neutralize(s.id) } }) : []
         foreground: root.app.fg
         background: root.app.panelBackground
         fontFamily: root.app.fontFamily

@@ -1,7 +1,6 @@
 import QtQuick
 import QtQuick.Controls
 import Quickshell
-import Quickshell.Hyprland
 import qs.Commons
 import qs.Commons as Commons
 import qs.Ui
@@ -58,16 +57,6 @@ Panel {
     onTriggered: {
       var api = root.bar ? root.bar.shell : null
       if (api && typeof api.serviceFor === "function") root.service = api.serviceFor(root.moduleName)
-    }
-  }
-
-  Connections {
-    target: root.service
-    function onPanelRequested() {
-      var monitor = Hyprland.focusedMonitor
-      var window = root.QsWindow.window
-      var mine = window && window.screen ? String(window.screen.name || "") : ""
-      if (!monitor || mine === "" || mine === String(monitor.name || "")) root.open()
     }
   }
 

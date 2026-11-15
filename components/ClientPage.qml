@@ -96,6 +96,8 @@ Column {
       root.latency = v
       latencyTimer.restart()
     }
+    // Leaving the page within the debounce still sends the edit.
+    Component.onDestruction: if (latencyTimer.running && root.service && root.client) root.service.setClientLatency(root.clientId, root.latency)
     Timer {
       id: latencyTimer
       interval: 250
@@ -126,7 +128,7 @@ Column {
     bordered: true
     foreground: root.app.urgent
     fontFamily: root.app.fontFamily
-    onClicked: root.app.confirm(root.app.strings.t("client.deleteConfirm").arg(Model.clientName(root.client)),
+    onClicked: root.app.confirm(root.app.strings.t("client.deleteConfirm").arg(Model.neutralize(Model.clientName(root.client))),
       root.app.strings.t("client.delete"), function() {
         root.service.deleteClient(root.clientId, function() { root.app.go("main", "", true) })
       })

@@ -59,6 +59,18 @@ Deno.test("tooltips with server data are neutralized", () => {
   assert(m[1].includes("Model.neutralize(Model.groupName(g))"), "group name in the bar tooltip is neutralized")
 })
 
+Deno.test("server text handed to Omarchy components (labels, dialogs) is neutralized", () => {
+  // Dropdown/Toggle labels and ConfirmDialog messages are rendered by the
+  // shell's own components, not PlainText.
+  const serverText = /Model\.clientName\(|Model\.groupName\(|\bs\.id\b|modelData\.id\b/
+  for (const f of files) {
+    read(f).split("\n").forEach((line, i) => {
+      if (!/\blabel:|app\.confirm\(|tooltipText:/.test(line) || !serverText.test(line)) return
+      assert(line.includes("Model.neutralize("), f + ":" + (i + 1) + " passes server text without Model.neutralize()")
+    })
+  }
+})
+
 Deno.test("every translation key used in QML exists in en.json", () => {
   const en = JSON.parse(Deno.readTextFileSync(root + "i18n/en.json")) as Record<string, unknown>
   const missing: string[] = []

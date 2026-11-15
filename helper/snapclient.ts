@@ -133,25 +133,45 @@ export class SnapclientSupervisor {
     return env
   }
 
-  async start(opts: LocalOptions): Promise<void> {
-    // Validate now so a bad setting is reported instead of crash-looping.
-    Model.snapclientArgs(opts, this.#version)
-    const changed = JSON.stringify(opts) !== JSON.stringify(this.#opts)
-    this.#opts = { ...opts }
-    this.#wanted = true
-    if (!this.#available && !(await this.detect())) return
-    if (this.#child && !changed) return
-    this.#attempt = 0
-    clearTimeout(this.#restartTimer)
-    if (this.#child) await this.#kill()
-    this.#spawn()
+  // start() and stop() await the old child's exit; run them one at a time so
+  // two overlapping calls can't both spawn (the first child would be orphaned).
+  #queue: Promise<void> = Promise.resolve()
+  #serial(fn: () => Promise<void>): Promise<void> {
+    const run = this.#queue.then(fn)
+    this.#queue = run.catch(() => {})
+    return run
   }
 
-  async stop(): Promise<void> {
+  start(opts: LocalOptions): Promise<void> {
+    // Validate now so a bad setting is reported instead of crash-looping.
+    try {
+      Model.snapclientArgs(opts, this.#version)
+    } catch (e) {
+      return Promise.reject(e)
+    }
+    return this.#serial(async () => {
+      const changed = JSON.stringify(opts) !== JSON.stringify(this.#opts)
+      this.#opts = { ...opts }
+      this.#wanted = true
+      if (!this.#available && !(await this.detect())) return
+      if (this.#child && !changed) return
+      this.#attempt = 0
+      clearTimeout(this.#restartTimer)
+      if (this.#child) await this.#kill()
+      this.#spawn()
+    })
+  }
+
+  stop(): Promise<void> {
+    // Cancel restarts at once; the kill itself waits its turn.
     this.#wanted = false
     clearTimeout(this.#restartTimer)
-    await this.#kill()
-    if (this.#state !== "unavailable") this.#set("stopped", "")
+    return this.#serial(async () => {
+      this.#wanted = false
+      clearTimeout(this.#restartTimer)
+      await this.#kill()
+      if (this.#state !== "unavailable") this.#set("stopped", "")
+    })
   }
 
   #spawn(): void {

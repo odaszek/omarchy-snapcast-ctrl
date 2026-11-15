@@ -101,7 +101,7 @@ Column {
         iconText: Model.ICON.remove
         hoverColor: root.app.urgent
         tooltipText: root.app.strings.t("streams.remove")
-        onClicked: root.app.confirm(root.app.strings.t("streams.removeConfirm").arg(modelData.id),
+        onClicked: root.app.confirm(root.app.strings.t("streams.removeConfirm").arg(Model.neutralize(modelData.id)),
           root.app.strings.t("streams.remove"), function() { root.service.removeStream(modelData.id) })
       }
     }

@@ -35,13 +35,18 @@ Column {
     username = s.username
     localHostId = s.localHostId
     if (service && s.username !== "") service.hasPassword(function(stored) { root.passwordStored = stored })
-    loadSoundcards()
+    loadSoundcards(s.localPlayer)
   }
 
-  function loadSoundcards() {
+  // Edits still waiting in a debounce timer are saved when the page closes.
+  Component.onDestruction: if (latencySave.running && service) service.updateSetting("localLatency", latencySave.value)
+
+  function loadSoundcards(player) {
     if (!service) return
-    service.listSoundcards(s.localPlayer, function(list) { root.soundcards = list })
+    service.listSoundcards(player, function(list) { root.soundcards = list })
   }
+  // snapclient was installed while the page is open.
+  onLocalAvailableChanged: if (localAvailable) loadSoundcards(s.localPlayer)
 
   readonly property bool dirty: host.trim() !== s.host || port !== String(s.port) || httpPort !== String(s.httpPort)
     || streamPort !== String(s.streamPort) || username.trim() !== s.username || password !== ""
@@ -53,18 +58,23 @@ Column {
     var ports = [port, httpPort, streamPort]
     for (var i = 0; i < ports.length; i++) if (!Model.validPort(ports[i])) { error = app.strings.t("settings.invalidPort"); return }
     var u = username.trim()
-    if (!/^[A-Za-z0-9_.@-]{0,64}$/.test(u)) { error = app.strings.t("settings.invalidUser"); return }
+    if (!Model.USER_RE.test(u)) { error = app.strings.t("settings.invalidUser"); return }
     var hid = localHostId.trim()
-    if (!/^[A-Za-z0-9._:-]{0,64}$/.test(hid)) { error = app.strings.t("settings.invalidHostId"); return }
+    if (hid !== "" && !Model.HOSTID_RE.test(hid)) { error = app.strings.t("settings.invalidHostId"); return }
     error = ""
     var pw = password
     service.updateSettings({ host: h, port: Number(port), httpPort: Number(httpPort), streamPort: Number(streamPort), username: u, localHostId: hid })
     password = ""
     saved = app.strings.t("settings.saved")
     savedTimer.restart()
-    // The password goes to the keyring once the helper runs with the new host/user.
-    if (pw !== "" && u !== "") passwordTimer.pending = pw
-    if (pw !== "" && u !== "") passwordTimer.restart()
+    // The password goes to the keyring once the helper runs with the new
+    // host/user; the service holds it, so leaving this page doesn't lose it.
+    if (pw !== "" && u !== "") {
+      service.queuePassword(pw, function(ok, result) {
+        if (ok) root.passwordStored = true
+        else root.error = String(result)
+      })
+    }
   }
 
   Timer {
@@ -72,20 +82,6 @@ Column {
     interval: 3000
     onTriggered: root.saved = ""
   }
-  Timer {
-    id: passwordTimer
-    property string pending: ""
-    interval: 1200
-    onTriggered: {
-      var pw = pending
-      pending = ""
-      root.service.setPassword(pw, function(ok, result) {
-        if (ok) root.passwordStored = true
-        else root.error = String(result)
-      })
-    }
-  }
-
   // ---------------------------------------------------------------- server
   PanelSectionHeader {
     text: root.app.strings.t("settings.server")
@@ -301,7 +297,7 @@ Column {
         fontFamily: root.app.fontFamily
         onChanged: function(v) {
           root.service.updateSettings({ localPlayer: v, localSoundcard: "" })
-          Qt.callLater(root.loadSoundcards)
+          root.loadSoundcards(v)
         }
       }
     }

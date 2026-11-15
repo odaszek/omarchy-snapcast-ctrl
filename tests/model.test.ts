@@ -185,14 +185,15 @@ Deno.test("reduce: group mute, stream, name", () => {
   assertEquals([g.muted, g.stream_id, g.name], [true, "Spotify", "Downstairs"])
 })
 
-Deno.test("reduce: Stream.OnProperties accepts nested properties and keeps old metadata", () => {
+Deno.test("reduce: Stream.OnProperties replaces the properties; missing keys are cleared", () => {
   let s = base()
   s = reduce(s, "Stream.OnProperties", { id: "Spotify", properties: { playbackStatus: "playing", position: 20 } }).server
   const p = M.findStream(s, "Spotify").properties
   assertEquals(p.playbackStatus, "playing")
   assertEquals(p.position, 20)
-  assertEquals(p.metadata.title, "Close Your Eyes", "metadata kept")
-  assertEquals(p.canSeek, true, "capabilities kept")
+  // snapserver sends the full set: what is absent was cleared (track ended).
+  assertEquals(p.metadata, null)
+  assertEquals(p.canSeek, false)
 })
 
 Deno.test("reduce: Stream.OnProperties accepts the flat form with metadata", () => {
@@ -200,7 +201,7 @@ Deno.test("reduce: Stream.OnProperties accepts the flat form with metadata", () 
   const p = M.findStream(s, "Spotify").properties
   assertEquals(p.metadata.title, "Next one")
   assertEquals(p.metadata.artist, ["B"])
-  assertEquals(p.playbackStatus, "paused")
+  assertEquals(p.playbackStatus, "stopped")
 })
 
 Deno.test("reduce: Stream.OnUpdate replaces the stream", () => {
@@ -355,7 +356,7 @@ Deno.test("netAllowList limits the helper to the server", () => {
 
 // ---------------------------------------------------------------- snapclient
 
-Deno.test("snapclientArgs: URL form for >= 0.28, -h/-p before", () => {
+Deno.test("snapclientArgs: URL form for >= 0.32, -h/-p before", () => {
   const opts = { host: "snap.lan", port: 1704, hostId: "omarchy-box", player: "pulse", soundcard: "", latency: 0 }
   assertEquals(M.snapclientArgs(opts, "0.35.0"), [
     "--hostID",
@@ -366,7 +367,7 @@ Deno.test("snapclientArgs: URL form for >= 0.28, -h/-p before", () => {
     "stderr",
     "tcp://snap.lan:1704",
   ])
-  assertEquals(M.snapclientArgs({ ...opts, latency: 30, soundcard: "default" }, [0, 27, 0]), [
+  assertEquals(M.snapclientArgs({ ...opts, latency: 30, soundcard: "default" }, [0, 31, 0]), [
     "--hostID",
     "omarchy-box",
     "--player",
@@ -392,6 +393,10 @@ Deno.test("snapclientArgs refuses invalid options", () => {
   assertThrows(() => M.snapclientArgs({ ...ok, hostId: "--daemon" + " x" }, null), /host id/)
   assertThrows(() => M.snapclientArgs({ ...ok, player: "file:/etc/passwd" }, null), /player/)
   assertThrows(() => M.snapclientArgs({ ...ok, soundcard: "$(rm)" }, null), /soundcard/)
+  // Values must not read as options.
+  assertThrows(() => M.snapclientArgs({ ...ok, soundcard: "--player" }, null), /soundcard/)
+  assertThrows(() => M.snapclientArgs({ ...ok, hostId: "-x" }, null), /host id/)
+  assertThrows(() => M.snapclientArgs({ ...ok, host: "-h" }, null), /host/)
 })
 
 Deno.test("parseVersion / versionAtLeast / defaultHostId", () => {

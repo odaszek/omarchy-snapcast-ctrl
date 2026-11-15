@@ -36,9 +36,20 @@ Item {
     watchChanges: true
     printErrors: false
     onFileChanged: reload()
-    onLoaded: root.readShellJson(text())
-    onLoadFailed: root.fileSettings = null
+    onLoaded: {
+      root.readShellJson(text())
+      root.settingsLoaded = true
+    }
+    onLoadFailed: {
+      root.fileSettings = null
+      root.settingsLoaded = true
+    }
   }
+
+  // The helper starts once the settings are known, so it is launched with
+  // the right server (and network permission) the first time.
+  property bool settingsLoaded: false
+  onSettingsLoadedChanged: if (settingsLoaded) startHelper()
 
   function readShellJson(text) {
     if (typeof text !== "string" || text.length > 4 * 1024 * 1024) return
@@ -49,9 +60,27 @@ Item {
       return // mid-write or hand-edit typo: keep the last good settings
     }
     var entry = Model.findEntrySettings(parsed && parsed.bar ? parsed.bar : null, pluginId)
+    // The file caught up with our own writes.
+    var left = {}
+    var any = false
+    for (var k in pendingSettings) {
+      if (JSON.stringify(entry[k]) !== JSON.stringify(pendingSettings[k])) { left[k] = pendingSettings[k]; any = true }
+    }
+    pendingTimer.stop()
+    if (any) pendingTimer.start()
+    pendingSettings = left
     if (JSON.stringify(entry) !== JSON.stringify(fileSettings)) fileSettings = entry
   }
-  readonly property var settings: Model.normalizeSettings(rawSettings)
+  // Changes written by updateSettings() that the file watch has not reported
+  // back yet. They apply at once and are carried into the next write, so two
+  // quick updates don't overwrite each other.
+  property var pendingSettings: ({})
+  Timer {
+    id: pendingTimer
+    interval: 3000
+    onTriggered: root.pendingSettings = ({}) // the write never landed (or was changed by hand)
+  }
+  readonly property var settings: Model.normalizeSettings(Object.assign({}, rawSettings, pendingSettings))
   readonly property bool configured: settings.host !== ""
 
   // Anything that changes how the helper must be started (its network
@@ -61,9 +90,9 @@ Item {
 
   // ---- state published to the widgets ----
   property bool helperReady: false
-  // Host the running helper was started with; differs from settings.host
-  // while a relaunch for new settings is pending.
-  property string helperHost: ""
+  // launchKey the running helper was started with.
+  property string launchedKey: ""
+  readonly property bool helperCurrent: helperReady && launchedKey === launchKey && !relaunch
   property string helperError: ""
   property string connectionState: "idle"   // idle|connecting|connected|disconnected|unconfigured
   property string connectionError: ""
@@ -90,8 +119,6 @@ Item {
     interval: 10000
     onTriggered: root.localNotice = ""
   }
-
-  signal panelRequested()
 
   Timer {
     id: warningTimer
@@ -171,6 +198,7 @@ Item {
     if (helper.running) return
     stopping = false
     helperError = ""
+    launchedKey = launchKey
     helper.running = true
   }
 
@@ -184,7 +212,6 @@ Item {
     helper.running = false
   }
 
-  Component.onCompleted: startHelper()
   Component.onDestruction: {
     stopping = true
     helper.running = false
@@ -211,10 +238,10 @@ Item {
 
     switch (msg.event) {
     case "ready":
-      helperHost = String(msg.host || "")
       helperReady = true
       helperError = ""
       refreshLocal()
+      flushPassword()
       break
     case "connection":
       connectionState = String(msg.state || "idle")
@@ -356,17 +383,26 @@ Item {
     request("localClientId", localOptions(), function(ok, result) {
       if (ok) root.localClientId = String(result.clientId || "")
     })
-    if (helperHost !== settings.host) return // relaunching with the new server; refreshed on "ready"
+    if (!helperCurrent) return // relaunching with new settings; refreshed on "ready"
     if (settings.localPlayback && configured) act("localStart", localOptions())
     else request("localStop", {})
   }
 
   function setLocalPlayback(on) {
     if (on === true && !local.available) {
-      // Don't record a wish that can't be met: the icon would claim playback.
-      localNotice = "noSnapclient"
-      localNoticeTimer.restart()
-      if (settings.localPlayback) updateSetting("localPlayback", false)
+      // It may have been installed since the helper last looked.
+      request("localStatus", {}, function(ok, result) {
+        if (!ok) return // helper down: its own error is on screen
+        if (result && result.available === true) {
+          root.localNotice = ""
+          root.updateSetting("localPlayback", true)
+          return
+        }
+        // Don't record a wish that can't be met: the icon would claim playback.
+        root.localNotice = "noSnapclient"
+        localNoticeTimer.restart()
+        if (root.settings.localPlayback) root.updateSetting("localPlayback", false)
+      })
       return
     }
     localNotice = ""
@@ -381,6 +417,37 @@ Item {
 
   // ---- credentials ----
   function setPassword(password, done) { request("setPassword", { password: password }, done) }
+
+  // A password saved together with a new host or user name must wait for the
+  // helper that runs with those settings. Held here (memory only), not in
+  // the Settings page, so leaving the page doesn't lose it.
+  property string queuedPassword: ""
+  property var queuedPasswordDone: null
+  function queuePassword(password, done) {
+    queuedPassword = password
+    queuedPasswordDone = done || null
+    passwordFlush.restart()
+  }
+  function flushPassword() {
+    if (queuedPassword === "") return
+    if (!helperCurrent || relaunchTimer.running) { passwordFlush.restart(); return }
+    var pw = queuedPassword
+    var done = queuedPasswordDone
+    queuedPassword = ""
+    queuedPasswordDone = null
+    setPassword(pw, function(ok, result) {
+      if (!ok) {
+        root.lastWarning = String(result).slice(0, 300)
+        warningTimer.restart()
+      }
+      if (done) try { done(ok, result) } catch (e) {}
+    })
+  }
+  Timer {
+    id: passwordFlush
+    interval: 700 // longer than relaunchTimer, so a pending relaunch has started
+    onTriggered: root.flushPassword()
+  }
   function hasPassword(done) {
     request("hasPassword", {}, function(ok, result) { done(ok && result.stored === true) })
   }
@@ -388,9 +455,12 @@ Item {
   // ---- settings (this widget's inline shell.json entry) ----
   function updateSettings(changes) {
     if (!shell || typeof shell.updateEntryInline !== "function") return false
-    var next = Object.assign({}, rawSettings)
+    var pend = Object.assign({}, pendingSettings)
+    for (var k in changes) pend[k] = changes[k]
+    var next = Object.assign({}, rawSettings, pend)
     delete next.id
-    for (var k in changes) next[k] = changes[k]
+    pendingSettings = pend
+    pendingTimer.restart()
     return shell.updateEntryInline(pluginId, next)
   }
 

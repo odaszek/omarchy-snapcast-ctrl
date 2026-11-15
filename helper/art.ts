@@ -5,8 +5,10 @@
 // Policies:
 //   "server"  only the Snapcast server's own HTTP port (snapserver's image
 //             cache, /__image_cache?name=…). Deno's --allow-net enforces it too.
-//   "any"     any http(s) host, e.g. Spotify's CDN. Off by default: it tells
-//             third parties what is playing.
+//   "any"     any public http(s) host, e.g. Spotify's CDN. Off by default: it
+//             tells third parties what is playing. Loopback and private
+//             addresses other than the server stay blocked, so a hostile
+//             server can't point the helper at routers or local services.
 //   "off"     no cover art.
 
 import type { Logger } from "./log.ts"
@@ -14,13 +16,14 @@ import type { Logger } from "./log.ts"
 export const MAX_ART_BYTES = 4 * 1024 * 1024
 const MAX_CACHE_FILES = 64
 const TIMEOUT_MS = 8000
+const MAX_REDIRECTS = 3
+const RETRY_FAILED_MS = 60 * 1000
 
 const MAGIC: [string, number[]][] = [
   ["png", [0x89, 0x50, 0x4e, 0x47]],
   ["jpg", [0xff, 0xd8, 0xff]],
   ["gif", [0x47, 0x49, 0x46, 0x38]],
   ["webp", [0x52, 0x49, 0x46, 0x46]], // RIFF; checked for WEBP below
-  ["bmp", [0x42, 0x4d]],
 ]
 
 /** File extension from the image's magic bytes, or "" if it is not an image we accept. */
@@ -38,6 +41,27 @@ export function sniffImage(bytes: Uint8Array): string {
 
 function bracket(host: string): string {
   return host.includes(":") && !host.startsWith("[") ? "[" + host + "]" : host
+}
+
+/** Loopback, private, link-local and similar hosts (IP literals and localhost names). */
+export function isPrivateHost(hostname: string): boolean {
+  const h = hostname.toLowerCase().replace(/^\[|\]$/g, "").replace(/\.$/, "")
+  if (h === "" || h === "localhost" || h.endsWith(".localhost") || h.endsWith(".local") || h.endsWith(".internal")) return true
+  const v4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(h)
+  if (v4) {
+    const a = Number(v4[1]), b = Number(v4[2])
+    return a === 0 || a === 10 || a === 127 || a >= 224 || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) ||
+      (a === 192 && b === 168) || (a === 100 && b >= 64 && b <= 127)
+  }
+  if (h.includes(":")) {
+    // IPv6 literal: only global unicast (2000::/3) counts as public, and not
+    // the ranges that embed an IPv4 address (6to4, Teredo, NAT64 are rare
+    // enough to refuse outright).
+    if (!/^[23]/.test(h) || h.startsWith("2002:") || h.startsWith("2001:0:") || h.startsWith("2001::")) return true
+    return false
+  }
+  // A single label ("router", "nas") is a LAN name.
+  return !h.includes(".")
 }
 
 /**
@@ -60,11 +84,11 @@ export function resolveArtUrl(artUrl: string, policy: string, serverHost: string
     if (!/^[A-Za-z0-9_.-]{1,128}$/.test(name)) return ""
     return "http://" + bracket(serverHost) + ":" + httpPort + "/__image_cache?name=" + encodeURIComponent(name)
   }
-  if (policy === "any") return u.href
-  // "server": only the server's HTTP port.
   const host = u.hostname.replace(/^\[|\]$/g, "")
   const port = u.port ? Number(u.port) : (u.protocol === "https:" ? 443 : 80)
+  // The server's own HTTP port is fine under either policy.
   if (host.toLowerCase() === serverHost.toLowerCase().replace(/^\[|\]$/g, "") && port === httpPort) return u.href
+  if (policy === "any" && !isPrivateHost(host)) return u.href
   return ""
 }
 
@@ -77,8 +101,10 @@ export class ArtCache {
   #dir: string
   #log: Logger
   #inflight = new Map<string, Promise<string>>()
-  #known = new Map<string, string>() // url -> path ("" = failed)
+  #known = new Map<string, { path: string; at: number }>() // path "" = failed
   fetcher: typeof fetch = fetch
+  /** Decides whether a redirect target may be followed (same policy as the first URL). */
+  allow: (url: string) => boolean = () => true
 
   constructor(stateDir: string, log: Logger) {
     this.#dir = stateDir + "/art"
@@ -90,17 +116,22 @@ export class ArtCache {
 
   /** Cached result without fetching: a path, "" (failed) or undefined (unknown). */
   peek(url: string): string | undefined {
-    return this.#known.get(url)
+    const k = this.#known.get(url)
+    if (!k) return undefined
+    // A failure is retried after a while: it may have been a timeout.
+    if (k.path === "" && Date.now() - k.at > RETRY_FAILED_MS) return undefined
+    return k.path
   }
 
   /** Local file path of the image at `url` (already resolved by resolveArtUrl), or "" on failure. */
   get(url: string): Promise<string> {
-    const known = this.#known.get(url)
+    const known = this.peek(url)
     if (known !== undefined) return Promise.resolve(known)
     let p = this.#inflight.get(url)
     if (!p) {
       p = this.#fetch(url).then((path) => {
-        this.#known.set(url, path)
+        this.#known.delete(url)
+        this.#known.set(url, { path, at: Date.now() })
         if (this.#known.size > 512) this.#known.delete(this.#known.keys().next().value as string)
         return path
       }).finally(() => this.#inflight.delete(url))
@@ -119,7 +150,27 @@ export class ArtCache {
       } catch { /* not cached */ }
     }
     try {
-      const res = await this.fetcher(url, { signal: AbortSignal.timeout(TIMEOUT_MS), redirect: "follow" })
+      // Redirects are followed by hand so every hop passes the policy check.
+      const signal = AbortSignal.timeout(TIMEOUT_MS)
+      let target = url
+      let res = await this.fetcher(target, { signal, redirect: "manual" })
+      for (let hop = 0; res.status >= 300 && res.status < 400; hop++) {
+        const location = res.headers.get("location")
+        await res.body?.cancel()
+        if (!location || hop >= MAX_REDIRECTS) return ""
+        let next: URL
+        try {
+          next = new URL(location, target)
+        } catch {
+          return ""
+        }
+        if ((next.protocol !== "http:" && next.protocol !== "https:") || next.username || next.password || !this.allow(next.href)) {
+          this.#log.debug("art: redirect refused: " + url)
+          return ""
+        }
+        target = next.href
+        res = await this.fetcher(target, { signal, redirect: "manual" })
+      }
       if (!res.ok || !res.body) {
         await res.body?.cancel()
         this.#log.debug("art: HTTP " + res.status + " for " + url)
@@ -185,7 +236,7 @@ export class ArtCache {
       try {
         await Deno.remove(f.path)
       } catch { /* gone */ }
-      for (const [u, p] of this.#known) if (p === f.path) this.#known.delete(u)
+      for (const [u, k] of this.#known) if (k.path === f.path) this.#known.delete(u)
     }
   }
 }

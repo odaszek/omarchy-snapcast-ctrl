@@ -26,7 +26,8 @@ cd helper && SNAPCAST_LIVE=host deno test --allow-all ../tests/live.test.ts     
   holds `server` (normalized snapshot), `groupIds`, connection and local-player state, and all ops.
   Settings: the widget's inline entry in `shell.json`, read by **watching the file** (`FileView`):
   the shell refreshes a plugin's `shell.barConfig` only when plugins change, not on edits.
-  Writes go through `shell.updateEntryInline`.
+  Writes go through `shell.updateEntryInline`; `pendingSettings` overlays our own writes until
+  the file watch reports them. The helper starts only once the settings are loaded.
 - `BarWidget.qml`: `Panel` + `BarIconButton` + `KeyboardPanel`. Page stack (`page`, `pageArg`,
   `history`) with a `Loader`; set `pageArg` before `page` (the Loader builds on `page` change).
   Pages/components in `components/` get the panel as `app` (`app.service`, `app.strings`, `app.fg`…).

@@ -392,6 +392,16 @@ Deno.test({
       await Deno.remove(fake.crashFile)
       await waitFor(() => helper.last("local")?.state === "running", 8000, "running again")
 
+      // Overlapping restarts (two settings changed in quick succession) leave one process.
+      await Promise.all([
+        helper.ok("localStart", { player: "pulse", soundcard: "", latency: 10, hostId: "omarchy-test" }),
+        helper.ok("localStart", { player: "pulse", soundcard: "", latency: 20, hostId: "omarchy-test" }),
+        helper.ok("localStart", { player: "pulse", soundcard: "", latency: 30, hostId: "omarchy-test" }),
+      ])
+      await new Promise((r) => setTimeout(r, 300))
+      const running = await new Deno.Command("pgrep", { args: ["-f", fake.bin + " --hostID"], stdout: "piped" }).output()
+      assertEquals(new TextDecoder().decode(running.stdout).trim().split("\n").length, 1, "exactly one snapclient")
+
       const bad = await helper.call("localStart", { player: "evil", hostId: "x y" })
       assertEquals(bad.ok, true, "invalid options fall back to defaults")
 

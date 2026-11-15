@@ -102,7 +102,7 @@ Column {
       width: parent.width
       showLabel: false
       value: root.streamId
-      options: root.service ? root.service.server.streams.map(function(s) { return { value: s.id, label: s.id + " · " + root.app.strings.t("stream.status." + s.status, s.status) } }) : []
+      options: root.service ? root.service.server.streams.map(function(s) { return { value: s.id, label: Model.neutralize(s.id) + " · " + root.app.strings.t("stream.status." + s.status, s.status) } }) : []
       foreground: root.app.fg
       background: root.app.panelBackground
       fontFamily: root.app.fontFamily
@@ -126,7 +126,7 @@ Column {
       Toggle {
         required property var modelData
         width: root.width
-        label: Model.clientName(modelData)
+        label: Model.neutralize(Model.clientName(modelData))
         description: (modelData.connected ? root.app.strings.t("client.online") : root.app.strings.t("client.offline"))
           + (modelData.id === root.service.localClientId ? " · " + root.app.strings.t("client.thisDevice") : "")
         checked: root.members[modelData.id] === true

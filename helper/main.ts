@@ -95,6 +95,7 @@ let rpcVersion = ""
 let connState = "idle"
 let connError = ""
 const art = new ArtCache(stateDir, log)
+art.allow = (url) => resolveArtUrl(url, settings.coverArt, settings.host, settings.httpPort) !== ""
 const secrets = new KeyringSecrets(log)
 
 let statusTimer: ReturnType<typeof setTimeout> | undefined
@@ -139,21 +140,29 @@ function hostName(): string {
 // This computer's snapclient shows up as "<hostname> client" rather than the
 // bare host name. Named once per helper run and only while the server has no
 // name for it, so a name the user picks later is kept.
-const namedLocal = new Set<string>()
+const namedLocal = new Map<string, number>() // client id -> attempts (done = Infinity)
 function nameLocalClient(): void {
   const cid = local.status().clientId
-  if (!cid || namedLocal.has(cid) || !rpc.connected) return
+  if (!cid || !rpc.connected) return
+  const tries = namedLocal.get(cid) ?? 0
+  if (tries >= 3) return
   const c = Model.findClient(server, cid)
   if (!c || !c.connected) return
-  namedLocal.add(cid)
-  if (c.config.name !== "") return
+  if (c.config.name !== "") {
+    namedLocal.set(cid, Infinity)
+    return
+  }
+  namedLocal.set(cid, Infinity) // in flight; a failure below allows a retry
   const name = Model.localClientName(hostName())
   rpc.request("Client.SetName", { id: cid, name })
     .then(() => {
       apply("Client.OnNameChanged", { id: cid, name })
       log.info("local client named " + name)
     })
-    .catch((e) => log.warn("naming the local client failed: " + errText(e)))
+    .catch((e) => {
+      namedLocal.set(cid, tries + 1)
+      log.debug("naming the local client failed: " + errText(e))
+    })
 }
 
 function emitConnection(): void {
@@ -238,6 +247,8 @@ const rpc = new SnapcastRpc({
       emitStatus()
     }
     emitConnection()
+    // The status sent from onConnected came before the state turned connected.
+    if (state === "connected") nameLocalClient()
   },
 })
 
