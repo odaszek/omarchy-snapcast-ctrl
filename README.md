@@ -45,7 +45,7 @@ page; hand edits are picked up live):
 | `localPlayer` | `"pulse"` | `pulse` (PipeWire's Pulse server), `pipewire`, `alsa` |
 | `localSoundcard` | `""` | from `snapclient --player <p> --list`; empty = default |
 | `localLatency` | 0 | extra device latency in ms |
-| `localHostId` | `""` | client id on the server; default `omarchy-<hostname>` |
+| `localHostId` | `""` | client id on the server; default `omarchy-<hostname>`. The client is shown as "<hostname> client" (set once while it has no name; rename it freely) |
 | `popupWidth` / `popupMaxHeight` | 420 / 640 | panel size |
 
 ## Keyboard

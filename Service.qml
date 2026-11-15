@@ -61,6 +61,9 @@ Item {
 
   // ---- state published to the widgets ----
   property bool helperReady: false
+  // Host the running helper was started with; differs from settings.host
+  // while a relaunch for new settings is pending.
+  property string helperHost: ""
   property string helperError: ""
   property string connectionState: "idle"   // idle|connecting|connected|disconnected|unconfigured
   property string connectionError: ""
@@ -78,6 +81,15 @@ Item {
   readonly property bool playing: connected && Model.anyPlaying(server)
   readonly property var targetGroup: Model.targetGroup(server, localRunning ? localClientId : "", settings.hideOffline)
   readonly property bool localRunning: local.state === "running" || local.state === "starting" || local.state === "restarting"
+  // Local playback switched on and possible: the header shows "stop" only then.
+  readonly property bool localOn: settings.localPlayback && local.available
+  // One-off message after a refused "play here" (snapclient missing).
+  property string localNotice: ""
+  Timer {
+    id: localNoticeTimer
+    interval: 10000
+    onTriggered: root.localNotice = ""
+  }
 
   signal panelRequested()
 
@@ -199,6 +211,7 @@ Item {
 
     switch (msg.event) {
     case "ready":
+      helperHost = String(msg.host || "")
       helperReady = true
       helperError = ""
       refreshLocal()
@@ -343,11 +356,20 @@ Item {
     request("localClientId", localOptions(), function(ok, result) {
       if (ok) root.localClientId = String(result.clientId || "")
     })
+    if (helperHost !== settings.host) return // relaunching with the new server; refreshed on "ready"
     if (settings.localPlayback && configured) act("localStart", localOptions())
     else request("localStop", {})
   }
 
   function setLocalPlayback(on) {
+    if (on === true && !local.available) {
+      // Don't record a wish that can't be met: the icon would claim playback.
+      localNotice = "noSnapclient"
+      localNoticeTimer.restart()
+      if (settings.localPlayback) updateSetting("localPlayback", false)
+      return
+    }
+    localNotice = ""
     updateSetting("localPlayback", on === true)
   }
 

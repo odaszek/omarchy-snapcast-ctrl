@@ -152,6 +152,21 @@ export class MockSnapserver {
     this.broadcast({ jsonrpc: "2.0", method, params })
   }
 
+  /** A new snapclient connects: it joins the first group and Client.OnConnect goes out. */
+  connectClient(id: string, name = ""): Json {
+    const c: Json = {
+      id,
+      connected: true,
+      config: { instance: 1, latency: 0, name, volume: { muted: false, percent: 100 } },
+      host: { arch: "x86_64", ip: "127.0.0.1", mac: "00:00:00:00:00:00", name: "localhost", os: "Arch Linux" },
+      lastSeen: { sec: 1763000000, usec: 0 },
+      snapclient: { name: "Snapclient", protocolVersion: 2, version: "0.35.0" },
+    }
+    ;(this.groups()[0].clients as Json[]).push(c)
+    this.notify("Client.OnConnect", { id, client: c })
+    return c
+  }
+
   /** Raw bytes to every session (protocol abuse tests). */
   sendRaw(text: string): void {
     for (const s of this.sessions) writeAll(s, this.#encoder.encode(text))

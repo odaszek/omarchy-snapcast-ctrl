@@ -2,6 +2,7 @@
 // permission set, talking NDJSON on stdio and JSON-RPC to the mock server.
 // A fake snapclient script stands in for local playback.
 
+import * as Model from "../lib/model.mjs"
 import { MockSnapserver } from "./tools/mock_snapserver.ts"
 import { assert, assertEquals, assertMatch, waitFor } from "./_assert.ts"
 
@@ -329,6 +330,34 @@ Deno.test({
       const r = await helper.call("setClientVolume", { clientId: KITCHEN, percent: 1 })
       assertEquals(r.ok, false)
       assertMatch(String(r.error), /not connected/)
+    } finally {
+      await cleanup()
+    }
+  },
+})
+
+Deno.test({
+  name: "helper: names this computer's client \"<hostname> client\" once, keeping names the user set",
+  sanitizeResources: false,
+  sanitizeOps: false,
+  async fn() {
+    const { mock, helper, cleanup } = await setup()
+    try {
+      await waitFor(() => helper.last("connection")?.state === "connected", 5000, "connected")
+      await helper.ok("localStart", { player: "pulse", hostId: "omarchy-test" })
+      await waitFor(() => helper.last("local")?.state === "running", 5000, "running")
+      mock.connectClient("omarchy-test")
+      const want = Model.localClientName(Deno.hostname())
+      await waitFor(() => (mock.client("omarchy-test")?.config as Msg)?.name === want, 5000, "named")
+      await waitFor(() => client(helper.last("status")!.server as Server, "omarchy-test")?.config.name === want, 3000, "status")
+
+      // Renamed by the user later, then reconnects: the helper leaves it alone.
+      await helper.ok("setClientName", { clientId: "omarchy-test", name: "Desk" })
+      mock.notify("Client.OnDisconnect", { id: "omarchy-test", client: mock.client("omarchy-test")! })
+      mock.notify("Client.OnConnect", { id: "omarchy-test", client: mock.client("omarchy-test")! })
+      await new Promise((r) => setTimeout(r, 400))
+      assertEquals((mock.client("omarchy-test")?.config as Msg).name, "Desk")
+      assertEquals(mock.received.filter((m) => m.method === "Client.SetName").length, 2)
     } finally {
       await cleanup()
     }

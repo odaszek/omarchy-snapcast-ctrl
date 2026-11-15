@@ -23,6 +23,7 @@ Column {
   property string localHostId: ""
   property var soundcards: []
   property string saved: ""
+  readonly property bool localAvailable: service !== null && service.local.available
 
   spacing: Style.space(12)
 
@@ -179,7 +180,7 @@ Column {
   InfoRow {
     width: parent.width
     app: root.app
-    label: root.app.strings.t("settings.connection")
+    label: root.app.strings.t("settings.status")
     value: root.service ? root.app.strings.t("settings.state." + root.service.connectionState, root.service.connectionState)
       + (root.service.connectionError !== "" && !root.service.connected ? " — " + root.service.connectionError : "") : ""
   }
@@ -246,94 +247,113 @@ Column {
     fontFamily: root.app.fontFamily
   }
 
-  PlainText {
+  // Without snapclient there is nothing to configure: explain instead of
+  // showing controls that can't work.
+  Rectangle {
     width: parent.width
-    visible: root.service && !root.service.local.available
-    text: root.app.strings.t("settings.noSnapclient")
-    wrapMode: Text.Wrap
-    color: root.app.urgent
-    font.family: root.app.fontFamily
-    font.pixelSize: Style.font.bodySmall
+    visible: !root.localAvailable
+    implicitHeight: missingText.implicitHeight + Style.space(16)
+    radius: Style.cornerRadius
+    color: root.app.subtle
+    PlainText {
+      id: missingText
+      anchors.left: parent.left
+      anchors.right: parent.right
+      anchors.verticalCenter: parent.verticalCenter
+      anchors.margins: Style.space(10)
+      text: root.app.strings.t("settings.noSnapclient")
+      wrapMode: Text.Wrap
+      elide: Text.ElideNone
+      color: root.app.fg
+      font.family: root.app.fontFamily
+      font.pixelSize: Style.font.bodySmall
+    }
   }
 
-  Toggle {
+  Column {
     width: parent.width
-    label: root.app.strings.t("settings.localPlayback")
-    description: root.service ? root.app.strings.t("local.state." + root.service.local.state, root.service.local.state)
-      + (root.service.localClientId !== "" ? " · " + root.service.localClientId : "") : ""
-    checked: root.s.localPlayback
-    enabled: root.service && root.service.configured
-    foreground: root.app.fg
-    fontFamily: root.app.fontFamily
-    titleSize: Style.font.body
-    onClicked: root.service.setLocalPlayback(!root.s.localPlayback)
-  }
+    spacing: parent.spacing
+    visible: root.localAvailable
 
-  FormField {
-    width: parent.width
-    app: root.app
-    label: root.app.strings.t("settings.backend")
-    ButtonGroup {
+    Toggle {
       width: parent.width
-      options: Model.PLAYERS.map(function(p) { return { value: p, label: root.app.strings.t("settings.player." + p, p) } })
-      value: root.s.localPlayer
+      label: root.app.strings.t("settings.localPlayback")
+      description: root.service ? root.app.strings.t("local.state." + root.service.local.state, root.service.local.state)
+        + (root.service.localClientId !== "" ? " · " + root.service.localClientId : "") : ""
+      checked: root.service !== null && root.service.localOn
+      enabled: root.service !== null && root.service.configured
       foreground: root.app.fg
-      background: root.app.panelBackground
       fontFamily: root.app.fontFamily
-      onChanged: function(v) {
-        root.service.updateSettings({ localPlayer: v, localSoundcard: "" })
-        Qt.callLater(root.loadSoundcards)
-      }
+      titleSize: Style.font.body
+      onClicked: root.service.setLocalPlayback(!root.service.localOn)
     }
-  }
 
-  FormField {
-    width: parent.width
-    app: root.app
-    label: root.app.strings.t("settings.soundcard")
-    Dropdown {
-      width: parent.width
-      showLabel: false
-      value: root.s.localSoundcard
-      options: [{ value: "", label: root.app.strings.t("settings.soundcardDefault") }].concat(root.soundcards)
-      foreground: root.app.fg
-      background: root.app.panelBackground
-      fontFamily: root.app.fontFamily
-      onChanged: function(v) { root.service.updateSetting("localSoundcard", v) }
-    }
-  }
-
-  Row {
-    width: parent.width
-    spacing: Style.space(8)
-    NumberField {
-      width: (parent.width - Style.space(8)) / 2
-      label: root.app.strings.t("settings.latency")
-      value: root.s.localLatency
-      from: 0
-      to: 2000
-      stepSize: 10
-      foreground: root.app.fg
-      fontFamily: root.app.fontFamily
-      onModified: function(v) { latencySave.value = v; latencySave.restart() }
-      Timer {
-        id: latencySave
-        property int value: 0
-        interval: 600
-        onTriggered: root.service.updateSetting("localLatency", value)
-      }
-    }
     FormField {
-      width: (parent.width - Style.space(8)) / 2
+      width: parent.width
       app: root.app
-      label: root.app.strings.t("settings.hostId")
-      Field {
+      label: root.app.strings.t("settings.backend")
+      ButtonGroup {
+        width: parent.width
+        options: Model.PLAYERS.map(function(p) { return { value: p, label: root.app.strings.t("settings.player." + p, p) } })
+        value: root.s.localPlayer
+        foreground: root.app.fg
+        background: root.app.panelBackground
+        fontFamily: root.app.fontFamily
+        onChanged: function(v) {
+          root.service.updateSettings({ localPlayer: v, localSoundcard: "" })
+          Qt.callLater(root.loadSoundcards)
+        }
+      }
+    }
+
+    FormField {
+      width: parent.width
+      app: root.app
+      label: root.app.strings.t("settings.soundcard")
+      Dropdown {
+        width: parent.width
+        showLabel: false
+        value: root.s.localSoundcard
+        options: [{ value: "", label: root.app.strings.t("settings.soundcardDefault") }].concat(root.soundcards)
+        foreground: root.app.fg
+        background: root.app.panelBackground
+        fontFamily: root.app.fontFamily
+        onChanged: function(v) { root.service.updateSetting("localSoundcard", v) }
+      }
+    }
+
+    Row {
+      width: parent.width
+      spacing: Style.space(8)
+      NumberField {
+        width: (parent.width - Style.space(8)) / 2
+        label: root.app.strings.t("settings.latency")
+        value: root.s.localLatency
+        from: 0
+        to: 2000
+        stepSize: 10
+        foreground: root.app.fg
+        fontFamily: root.app.fontFamily
+        onModified: function(v) { latencySave.value = v; latencySave.restart() }
+        Timer {
+          id: latencySave
+          property int value: 0
+          interval: 600
+          onTriggered: root.service.updateSetting("localLatency", value)
+        }
+      }
+      FormField {
+        width: (parent.width - Style.space(8)) / 2
         app: root.app
-        text: root.localHostId
-        maximumLength: 64
-        placeholderText: root.service ? root.service.localClientId : ""
-        onTextChanged: root.localHostId = text
-        onAccepted: root.save()
+        label: root.app.strings.t("settings.hostId")
+        Field {
+          app: root.app
+          text: root.localHostId
+          maximumLength: 64
+          placeholderText: root.service ? root.service.localClientId : ""
+          onTextChanged: root.localHostId = text
+          onAccepted: root.save()
+        }
       }
     }
   }

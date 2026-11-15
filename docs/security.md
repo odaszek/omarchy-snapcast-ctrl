@@ -23,7 +23,7 @@ once all functionality is confirmed working.
    and percent-encoding (`process://` is not offered: it runs a program on the server).
 3. **Helper process permissions** (`helper/start.sh`): `env -i`; read: its code and state dir;
    write: state dir; net: only `host:control,host:http` (or all hosts when the user picks cover
-   art "From anywhere"); run: the resolved `snapclient` and `secret-tool` binaries only; env:
+   art "Server + internet"); run: the resolved `snapclient` and `secret-tool` binaries only; env:
    `HOME`, `XDG_RUNTIME_DIR`; sys: hostname. No remote code (`--no-remote --no-npm`), no
    third-party dependencies.
 4. **snapclient**: started with an argv array (never a shell), every argument validated

@@ -12,17 +12,17 @@ Item {
   readonly property string message: {
     if (!service) return ""
     if (service.helperError !== "") return service.helperError
+    if (service.localNotice === "noSnapclient") return app.strings.t("banner.noSnapclient")
     if (!service.configured) return app.strings.t("banner.unconfigured")
     if (service.connectionState === "connecting" && service.connectionError === "") return app.strings.t("banner.connecting").arg(service.settings.host)
     if (service.connectionState === "disconnected" || (service.connectionState === "connecting" && service.connectionError !== ""))
       return app.strings.t("banner.disconnected").arg(service.settings.host + ":" + service.settings.port).arg(service.connectionError)
-    if (service.local.state === "unavailable" && service.settings.localPlayback) return app.strings.t("banner.noSnapclient")
     if ((service.local.state === "error" || service.local.state === "restarting") && service.local.error !== "")
       return app.strings.t("banner.localError").arg(service.local.error)
     return ""
   }
   readonly property bool problem: service && (service.helperError !== "" || service.connectionState === "disconnected"
-    || service.local.state === "error" || service.local.state === "restarting" || (service.local.state === "unavailable" && service.settings.localPlayback))
+    || service.local.state === "error" || service.local.state === "restarting" || service.localNotice !== "")
 
   visible: message !== "" && (!app || app.page !== "settings" || service.helperError !== "")
   implicitHeight: visible ? box.implicitHeight : 0

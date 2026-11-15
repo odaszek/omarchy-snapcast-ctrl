@@ -431,3 +431,9 @@ Deno.test("findEntrySettings finds the widget entry in any section", () => {
 Deno.test("icons are single glyphs", () => {
   for (const [k, v] of Object.entries(M.ICON)) assertEquals([...(v as string)].length, 1, k)
 })
+
+Deno.test("localClientName: <hostname> client, sanitized", () => {
+  assertEquals(M.localClientName("omarchy"), "omarchy client")
+  assertEquals(M.localClientName("bad<b>host"), "badbhost client")
+  assertEquals(M.localClientName(""), "Omarchy client")
+})

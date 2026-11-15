@@ -125,6 +125,35 @@ function view(): Server {
 
 function emitStatus(): void {
   emit({ event: "status", server: view() })
+  nameLocalClient()
+}
+
+function hostName(): string {
+  try {
+    return Deno.hostname()
+  } catch {
+    return "" // no sys permission
+  }
+}
+
+// This computer's snapclient shows up as "<hostname> client" rather than the
+// bare host name. Named once per helper run and only while the server has no
+// name for it, so a name the user picks later is kept.
+const namedLocal = new Set<string>()
+function nameLocalClient(): void {
+  const cid = local.status().clientId
+  if (!cid || namedLocal.has(cid) || !rpc.connected) return
+  const c = Model.findClient(server, cid)
+  if (!c || !c.connected) return
+  namedLocal.add(cid)
+  if (c.config.name !== "") return
+  const name = Model.localClientName(hostName())
+  rpc.request("Client.SetName", { id: cid, name })
+    .then(() => {
+      apply("Client.OnNameChanged", { id: cid, name })
+      log.info("local client named " + name)
+    })
+    .catch((e) => log.warn("naming the local client failed: " + errText(e)))
 }
 
 function emitConnection(): void {
@@ -264,10 +293,7 @@ function localOptions(p: Record<string, unknown>) {
     localLatency: p.latency,
     localHostId: p.hostId,
   })
-  let hostname = ""
-  try {
-    hostname = Deno.hostname()
-  } catch { /* no sys permission */ }
+  const hostname = hostName()
   return {
     host: settings.host,
     port: settings.streamPort,

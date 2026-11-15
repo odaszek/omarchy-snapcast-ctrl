@@ -37,7 +37,7 @@ Panel keys: `g` group settings, `t` streams, `n` add stream, `s` settings, `p` p
 - [ ] Group volume slider (groups with > 1 client) scales clients proportionally; group mute
 - [ ] Stream selector per group
 - [ ] Previous / play-pause / next for controllable streams (librespot, MPD with control script)
-- [ ] Now playing: title, artist, album, cover art (server cache; "From anywhere" for Spotify art)
+- [ ] Now playing: title, artist, album, cover art (server cache; "Server + internet" for Spotify art)
 - [ ] Group settings: stream, client checkboxes (moving clients between groups), name
 - [ ] Client details: name, latency (applied live, Cancel restores), MAC/ID/IP/host/OS/version
 - [ ] Delete an offline client (with confirmation)

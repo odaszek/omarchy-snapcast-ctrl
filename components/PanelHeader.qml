@@ -57,11 +57,11 @@ Item {
     IconButton {
       app: root.app
       visible: root.service && root.service.configured
-      iconText: root.service && root.service.settings.localPlayback ? Model.ICON.stop : Model.ICON.play
+      iconText: root.service && root.service.localOn ? Model.ICON.stop : Model.ICON.play
       hoverColor: root.app ? root.app.accent : "white"
-      tooltipText: root.app ? (root.service && root.service.settings.localPlayback
+      tooltipText: root.app ? (root.service && root.service.localOn
         ? root.app.strings.t("header.stopLocal") : root.app.strings.t("header.playLocal")) : ""
-      onClicked: root.service.setLocalPlayback(!root.service.settings.localPlayback)
+      onClicked: root.service.setLocalPlayback(!root.service.localOn)
     }
     IconButton {
       app: root.app

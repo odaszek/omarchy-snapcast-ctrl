@@ -137,7 +137,7 @@ Panel {
     tooltipText: root.opened ? "" : root.barTooltip
     onPressed: function(b) {
       if (b === Qt.LeftButton || b === Qt.RightButton) root.toggle()
-      else if (b === Qt.MiddleButton && root.ready) root.service.setLocalPlayback(!root.service.settings.localPlayback)
+      else if (b === Qt.MiddleButton && root.ready) root.service.setLocalPlayback(!root.service.localOn)
     }
     onWheelMoved: function(delta) {
       if (!root.ready) return
@@ -182,7 +182,7 @@ Panel {
         else if (k === "n" && root.service.connected) root.go("addStream")
         else if (k === "g" && root.service.targetGroup) root.go("group", root.service.targetGroup.id)
         else if (k === "r") root.service.reconnect()
-        else if (k === "p") root.service.setLocalPlayback(!root.service.settings.localPlayback)
+        else if (k === "p") root.service.setLocalPlayback(!root.service.localOn)
         else if (k === "m" && root.service.targetGroup) root.service.setGroupMute(root.service.targetGroup.id, !root.service.targetGroup.muted)
       }
 
