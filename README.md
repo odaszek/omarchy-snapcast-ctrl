@@ -31,10 +31,10 @@ name or IP address.
 keeps the plugin's service loaded, so new code is picked up only after a restart).
 
 **Uninstall:** `omarchy plugin remove odach.snapcast-ctrl`, then `omarchy restart shell` (this also
-stops snapclient if local playback was on). The settings stay in the widget's entry in
-`~/.config/omarchy/shell.json`, and the log and cover-art cache in
-`~/.local/state/omarchy/snapcast-ctrl`; delete that folder too to remove everything, and the
-server password, if you saved one, with `secret-tool clear service omarchy-snapcast-ctrl`.
+stops snapclient if local playback was on). This also removes the widget from the bar together
+with its settings. The log and cover-art cache stay in `~/.local/state/omarchy/snapcast-ctrl`;
+delete that folder too to remove everything, and the server password, if you saved one, with
+`secret-tool clear service omarchy-snapcast-ctrl`.
 
 **From a checkout (development):** `scripts/install.sh` copies the plugin into
 `~/.config/omarchy/plugins/odach.snapcast-ctrl` and restarts the shell. Use one method or the
