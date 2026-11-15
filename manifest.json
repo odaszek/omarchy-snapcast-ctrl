@@ -1,0 +1,64 @@
+{
+  "schemaVersion": 1,
+  "id": "odach.snapcast-ctrl",
+  "name": "Snapcast Control",
+  "version": "0.1.0",
+  "author": "odach",
+  "license": "MIT",
+  "description": "Control a Snapcast multi-room audio server from the bar: groups, clients, volume, streams, now playing, and local playback through snapclient.",
+  "kinds": ["service", "bar-widget"],
+  "keepLoaded": true,
+  "entryPoints": {
+    "service": "Service.qml",
+    "barWidget": "BarWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "Snapcast",
+    "description": "Snapcast server control: groups, clients, volume, streams and local playback.",
+    "category": "Media",
+    "allowMultiple": false,
+    "defaultSection": "right",
+    "defaults": {
+      "host": "",
+      "port": 1705,
+      "httpPort": 1780,
+      "streamPort": 1704,
+      "username": "",
+      "hideOffline": false,
+      "showMetadata": true,
+      "coverArt": "server",
+      "volumeStep": 5,
+      "popupWidth": 420,
+      "popupMaxHeight": 640,
+      "localPlayback": false,
+      "localPlayer": "pulse",
+      "localSoundcard": "",
+      "localLatency": 0,
+      "localHostId": ""
+    },
+    "schema": [
+      { "key": "host", "type": "string", "label": "Snapserver host", "defaultValue": "" },
+      { "key": "port", "type": "integer", "label": "Control port (TCP JSON-RPC)", "min": 1, "max": 65535, "step": 1, "defaultValue": 1705 },
+      { "key": "httpPort", "type": "integer", "label": "HTTP port (cover art)", "min": 1, "max": 65535, "step": 1, "defaultValue": 1780 },
+      { "key": "streamPort", "type": "integer", "label": "Streaming port (snapclient)", "min": 1, "max": 65535, "step": 1, "defaultValue": 1704 },
+      { "key": "username", "type": "string", "label": "User name (servers with authentication)", "defaultValue": "" },
+      { "key": "hideOffline", "type": "boolean", "label": "Hide offline clients", "defaultValue": false },
+      { "key": "showMetadata", "type": "boolean", "label": "Show now playing", "defaultValue": true },
+      {
+        "key": "coverArt",
+        "type": "enum",
+        "label": "Cover art",
+        "options": ["server", "any", "off"],
+        "defaultValue": "server"
+      },
+      { "key": "volumeStep", "type": "integer", "label": "Volume step (scroll wheel)", "min": 1, "max": 25, "step": 1, "defaultValue": 5 },
+      { "key": "popupWidth", "type": "integer", "label": "Panel width (px)", "min": 320, "max": 1200, "step": 10, "defaultValue": 420 },
+      { "key": "popupMaxHeight", "type": "integer", "label": "Panel maximum height (px)", "min": 240, "max": 2000, "step": 10, "defaultValue": 640 },
+      { "key": "localPlayback", "type": "boolean", "label": "Play on this computer", "defaultValue": false },
+      { "key": "localPlayer", "type": "enum", "label": "Audio backend", "options": ["pulse", "pipewire", "alsa"], "defaultValue": "pulse" },
+      { "key": "localSoundcard", "type": "string", "label": "Sound card (empty: default)", "defaultValue": "" },
+      { "key": "localLatency", "type": "integer", "label": "Device latency (ms)", "min": 0, "max": 10000, "step": 1, "defaultValue": 0 },
+      { "key": "localHostId", "type": "string", "label": "Client id (empty: omarchy-<hostname>)", "defaultValue": "" }
+    ]
+  }
+}
