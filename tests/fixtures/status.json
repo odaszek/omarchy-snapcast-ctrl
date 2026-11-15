@@ -1,0 +1,119 @@
+{
+  "server": {
+    "groups": [
+      {
+        "id": "4dcc4e3b-c699-a04b-7f0c-8260d23c43e1",
+        "name": "",
+        "muted": false,
+        "stream_id": "default",
+        "clients": [
+          {
+            "id": "b8:27:eb:45:e1:ae",
+            "connected": true,
+            "config": { "instance": 1, "latency": 0, "name": "Kitchen", "volume": { "muted": false, "percent": 40 } },
+            "host": {
+              "arch": "armv7l",
+              "ip": "192.168.0.252",
+              "mac": "b8:27:eb:45:e1:ae",
+              "name": "kitchen",
+              "os": "Raspbian GNU/Linux 12"
+            },
+            "lastSeen": { "sec": 1763000000, "usec": 70451 },
+            "snapclient": { "name": "Snapclient", "protocolVersion": 2, "version": "0.35.0" }
+          },
+          {
+            "id": "dc:a6:32:3f:bd:1c",
+            "connected": true,
+            "config": { "instance": 1, "latency": 20, "name": "", "volume": { "muted": false, "percent": 80 } },
+            "host": {
+              "arch": "aarch64",
+              "ip": "192.168.0.3",
+              "mac": "dc:a6:32:3f:bd:1c",
+              "name": "livingroom",
+              "os": "Debian GNU/Linux 12"
+            },
+            "lastSeen": { "sec": 1763000000, "usec": 967903 },
+            "snapclient": { "name": "Snapclient", "protocolVersion": 2, "version": "0.35.0" }
+          }
+        ]
+      },
+      {
+        "id": "1d5d515b-d5c0-2831-6415-c85225c4315f",
+        "name": "Office",
+        "muted": false,
+        "stream_id": "Spotify",
+        "clients": [
+          {
+            "id": "74:da:38:3e:d2:56",
+            "connected": false,
+            "config": { "instance": 1, "latency": 0, "name": "Office", "volume": { "muted": true, "percent": 30 } },
+            "host": { "arch": "x86_64", "ip": "192.168.0.8", "mac": "74:da:38:3e:d2:56", "name": "office", "os": "Arch Linux" },
+            "lastSeen": { "sec": 1762990000, "usec": 0 },
+            "snapclient": { "name": "Snapclient", "protocolVersion": 2, "version": "0.34.0" }
+          }
+        ]
+      }
+    ],
+    "server": {
+      "host": { "arch": "aarch64", "ip": "", "mac": "", "name": "snapserver", "os": "Debian GNU/Linux 12" },
+      "snapserver": { "controlProtocolVersion": 1, "name": "Snapserver", "protocolVersion": 1, "version": "0.35.0" }
+    },
+    "streams": [
+      {
+        "id": "default",
+        "status": "playing",
+        "uri": {
+          "fragment": "",
+          "host": "",
+          "path": "/tmp/snapfifo",
+          "raw": "pipe:///tmp/snapfifo?name=default&sampleformat=48000:16:2",
+          "scheme": "pipe",
+          "query": { "chunk_ms": "20", "codec": "flac", "name": "default", "sampleformat": "48000:16:2" }
+        },
+        "properties": {
+          "canControl": false,
+          "canGoNext": false,
+          "canGoPrevious": false,
+          "canPause": false,
+          "canPlay": false,
+          "canSeek": false,
+          "playbackStatus": "playing"
+        }
+      },
+      {
+        "id": "Spotify",
+        "status": "idle",
+        "uri": {
+          "fragment": "",
+          "host": "",
+          "path": "/usr/bin/librespot",
+          "raw": "librespot:///usr/bin/librespot?name=Spotify",
+          "scheme": "librespot",
+          "query": { "name": "Spotify", "sampleformat": "44100:16:2" }
+        },
+        "properties": {
+          "canControl": true,
+          "canGoNext": true,
+          "canGoPrevious": true,
+          "canPause": true,
+          "canPlay": true,
+          "canSeek": true,
+          "loopStatus": "none",
+          "shuffle": false,
+          "volume": 100,
+          "mute": false,
+          "rate": 1,
+          "position": 12.5,
+          "playbackStatus": "paused",
+          "metadata": {
+            "title": "Close Your Eyes",
+            "artist": ["Felix Jaehn", "VIZE"],
+            "album": "BREATHE",
+            "duration": 159.96,
+            "artUrl": "http://snapserver:1780/__image_cache?name=abc123.png"
+          }
+        }
+      }
+    ]
+  }
+}

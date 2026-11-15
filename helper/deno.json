@@ -1,0 +1,20 @@
+{
+  "tasks": {
+    "check": "deno check main.ts ../tests/",
+    "lint": "deno lint . ../tests ../lib",
+    "test": "deno test --allow-read --allow-write --allow-net --allow-run --allow-env --allow-sys ../tests/",
+    "fmt": "deno fmt . ../tests ../lib"
+  },
+  "compilerOptions": {
+    "checkJs": false
+  },
+  "lint": {
+    "rules": {
+      "exclude": ["no-explicit-any"]
+    }
+  },
+  "fmt": {
+    "lineWidth": 140,
+    "semiColons": false
+  }
+}
