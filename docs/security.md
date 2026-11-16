@@ -1,7 +1,8 @@
 # Security model
 
-Status: reviewed 2026-11-15 (whole tree: helper, `lib/model.mjs`, QML, scripts). Findings and what
-was done about them are listed under "Review results"; what remains is under "Known limitations".
+Status: reviewed 2026-11-15 (whole tree: helper, `lib/model.mjs`, QML, scripts); marketplace review
+findings fixed 2026-11-16. Findings and what was done about them are listed under "Review results";
+what remains is under "Known limitations".
 
 ## Trust boundaries
 
@@ -16,7 +17,10 @@ was done about them are listed under "Review results"; what remains is under "Kn
      `qmltestrunner` tests enforce both.
    - Cover art is never loaded by the shell from the network. The helper fetches it (policy:
      server only by default), caps it at 4 MiB, checks magic bytes (PNG/JPEG/GIF/WebP), follows
-     at most 3 redirects with the policy re-checked on every hop, and
+     at most 3 redirects with the policy re-checked on every hop. Any host other than the
+     configured server's HTTP port is resolved by the helper, refused if any of its addresses is
+     loopback/private/link-local, and fetched from the address that was checked (TLS still
+     verifies the certificate for the host name), so DNS rebinding can't redirect it. It
      stores it under `~/.local/state/omarchy/snapcast-ctrl/art/` (0600). `Service.qml` accepts
      only paths inside that directory.
 2. **The shell (trusted) → helper.** Requests are validated in the helper: ids, enumerated
@@ -30,13 +34,29 @@ was done about them are listed under "Review results"; what remains is under "Kn
 4. **snapclient**: started with an argv array (never a shell), every argument validated
    (`Model.snapclientArgs`), with a cleared environment except `HOME`/`XDG_RUNTIME_DIR`/`PATH`.
 5. **Credentials**: the optional server password lives in the Secret Service keyring, never in
-   `shell.json`, the log or the process list. snapclient is not given credentials (they would
+   `shell.json`, the log or the process list. It is keyed by host, control port and user name, so
+   it is only ever sent to the server it was saved for. A password typed in Settings is bound to
+   the host/port/user it was typed with and is dropped, not stored, if those change before the
+   helper for them is running. snapclient is not given credentials (they would
    appear in its command line), so local playback does not work with servers that require
    authentication on the streaming port.
 
 ## Review results
 
-Fixed in this review:
+Fixed after the marketplace review (2026-11-16):
+
+- **Cover art "Server + internet" checked the host name, not its addresses.** A public name
+  resolving to a private or loopback address (DNS rebinding) could aim blind GETs at local
+  endpoints. Names are now resolved by the helper, every address must be public, and the request
+  goes to the checked address (`helper/art.ts resolveHost`, `pinnedGet`, `ArtCache.#request`);
+  each redirect hop is resolved and checked again.
+- **A password could reach a different endpoint.** A password still waiting to be stored followed a
+  later host/user change saved with an empty password field, and a stored password was reused
+  for another control port on the same host/user. The pending password is now bound to the
+  host/port/user it was typed for (checked in `Service.qml` and again in the helper,
+  `Model.passwordTargetMatches`), and keyring entries include the control port.
+
+Fixed in the first review:
 
 - **Cover art "Server + internet" could be aimed at local services (SSRF).** A hostile server (or
   anyone able to set stream metadata) could make the helper send GET requests to `127.0.0.1`,
@@ -64,10 +84,6 @@ secrets or private addresses are committed; no third-party code is loaded.
 
 ## Known limitations
 
-- With cover art "Server + internet", a public host name that resolves to a private address (DNS
-  rebinding) is not caught: the check is on the name, not the resolved address. The response is
-  only ever used if it is a small image, so the exposure is a blind GET. Keep "Server only" on
-  networks you don't trust.
 - If the helper is killed with SIGKILL (not a normal shell exit or crash, which close its stdin),
   snapclient keeps running until it is stopped by hand (`pkill -f "snapclient --hostID omarchy-"`).
 - Adding librespot/AirPlay streams names a program path on the server. That is what the Snapcast

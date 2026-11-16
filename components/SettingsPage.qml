@@ -70,9 +70,9 @@ Column {
     // The password goes to the keyring once the helper runs with the new
     // host/user; the service holds it, so leaving this page doesn't lose it.
     if (pw !== "" && u !== "") {
-      service.queuePassword(pw, function(ok, result) {
+      service.queuePassword(pw, Model.passwordTarget({ host: h, port: Number(port), username: u }), function(ok, result) {
         if (ok) root.passwordStored = true
-        else root.error = String(result)
+        else root.error = result === "dropped" ? root.app.strings.t("settings.passwordDropped") : String(result)
       })
     }
   }

@@ -337,7 +337,7 @@ Deno.test({
 })
 
 Deno.test({
-  name: "helper: names this computer's client \"<hostname> client\" once, keeping names the user set",
+  name: 'helper: names this computer\'s client "<hostname> client" once, keeping names the user set',
   sanitizeResources: false,
   sanitizeOps: false,
   async fn() {

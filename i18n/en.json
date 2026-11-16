@@ -137,6 +137,7 @@
   "settings.password": "Password",
   "settings.optional": "optional",
   "settings.passwordStored": "Saved in the keyring",
+  "settings.passwordDropped": "The password was not saved because the server or user name changed before it could be stored. Enter it again.",
   "settings.save": "Save",
   "settings.saved": "Saved. Reconnecting…",
   "settings.invalidHost": "Enter a host name or an IP address.",

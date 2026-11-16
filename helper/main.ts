@@ -9,7 +9,7 @@
 //   events    {"event":"status","server":{…}}
 // and JSON-RPC 2.0 over TCP with snapserver (rpc_client.ts).
 
-import { ArtCache, resolveArtUrl } from "./art.ts"
+import { ArtCache, isServerUrl, resolveArtUrl } from "./art.ts"
 import { FileLogger } from "./log.ts"
 import { LineSplitter, SnapcastRpc } from "./rpc_client.ts"
 import { KeyringSecrets } from "./secrets.ts"
@@ -96,6 +96,7 @@ let connState = "idle"
 let connError = ""
 const art = new ArtCache(stateDir, log)
 art.allow = (url) => resolveArtUrl(url, settings.coverArt, settings.host, settings.httpPort) !== ""
+art.direct = (url) => isServerUrl(url, settings.host, settings.httpPort)
 const secrets = new KeyringSecrets(log)
 
 let statusTimer: ReturnType<typeof setTimeout> | undefined
@@ -215,7 +216,7 @@ const rpc = new SnapcastRpc({
   log,
   async onConnected(r) {
     if (settings.username) {
-      const password = await secrets.get(settings.host, settings.username)
+      const password = await secrets.get(settings.host, settings.port, settings.username)
       if (password !== null) {
         const param = btoa(String.fromCharCode(...new TextEncoder().encode(settings.username + ":" + password)))
         try {
@@ -540,15 +541,18 @@ const ops: Record<string, Handler> = {
   // ---- credentials ----
   hasPassword: async () => {
     if (!settings.username || !settings.host) return { stored: false }
-    return { stored: (await secrets.get(settings.host, settings.username)) !== null }
+    return { stored: (await secrets.get(settings.host, settings.port, settings.username)) !== null }
   },
 
   setPassword: async (p) => {
     if (!settings.username || !settings.host) throw new Error("set the server and user name first")
+    // The password was typed for one server and user; refuse it if this
+    // helper runs for any other (settings changed in between).
+    if (!Model.passwordTargetMatches(settings, p.target)) throw new Error("server settings changed; password not saved")
     const password = typeof p.password === "string" ? p.password : ""
-    if (password.length === 0) await secrets.remove(settings.host, settings.username)
+    if (password.length === 0) await secrets.remove(settings.host, settings.port, settings.username)
     else if (password.length > 256) throw new Error("password too long")
-    else await secrets.set(settings.host, settings.username, password)
+    else await secrets.set(settings.host, settings.port, settings.username, password)
     rpc.reconnect()
     return {}
   },

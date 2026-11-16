@@ -36,7 +36,7 @@ Helper arguments: `--state-dir DIR --host H --port 1705 --http-port 1780 --strea
 | `localStop` | – | stops it |
 | `localClientId` | `hostId` | the client id local playback uses |
 | `listSoundcards` | `player` | `snapclient --player P --list` |
-| `hasPassword` / `setPassword` | `password` (empty removes) | keyring via `secret-tool` |
+| `hasPassword` / `setPassword` | `password` (empty removes), `target` `{host, port, username}` it was typed for (refused unless it matches the helper's settings) | keyring via `secret-tool`, keyed by host, port and user |
 
 Snapserver does not echo notifications to the session that caused a change, so the helper applies
 each successful response to its snapshot itself (and optimistically, for volume, mute and stream).

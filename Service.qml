@@ -416,26 +416,45 @@ Item {
   }
 
   // ---- credentials ----
-  function setPassword(password, done) { request("setPassword", { password: password }, done) }
+  // `target` is the { host, port, username } the password was typed for
+  // (Model.passwordTarget); the helper refuses it for any other server.
+  function setPassword(password, target, done) { request("setPassword", { password: password, target: target }, done) }
 
   // A password saved together with a new host or user name must wait for the
   // helper that runs with those settings. Held here (memory only), not in
-  // the Settings page, so leaving the page doesn't lose it.
+  // the Settings page, so leaving the page doesn't lose it. It is bound to
+  // the server it was typed for and dropped if the settings move elsewhere.
   property string queuedPassword: ""
+  property var queuedPasswordTarget: null
   property var queuedPasswordDone: null
-  function queuePassword(password, done) {
+  function queuePassword(password, target, done) {
     queuedPassword = password
+    queuedPasswordTarget = target
     queuedPasswordDone = done || null
     passwordFlush.restart()
   }
-  function flushPassword() {
-    if (queuedPassword === "") return
-    if (!helperCurrent || relaunchTimer.running) { passwordFlush.restart(); return }
-    var pw = queuedPassword
+  function dropQueuedPassword() {
     var done = queuedPasswordDone
     queuedPassword = ""
+    queuedPasswordTarget = null
     queuedPasswordDone = null
-    setPassword(pw, function(ok, result) {
+    passwordFlush.stop()
+    return done
+  }
+  function flushPassword() {
+    if (queuedPassword === "") return
+    if (!Model.passwordTargetMatches(settings, queuedPasswordTarget)) {
+      // Host, port or user changed again before it was stored: never let
+      // it follow to a different server.
+      var dropped = dropQueuedPassword()
+      if (dropped) try { dropped(false, "dropped") } catch (e) {}
+      return
+    }
+    if (!helperCurrent || relaunchTimer.running) { passwordFlush.restart(); return }
+    var pw = queuedPassword
+    var target = queuedPasswordTarget
+    var done = dropQueuedPassword()
+    setPassword(pw, target, function(ok, result) {
       if (!ok) {
         root.lastWarning = String(result).slice(0, 300)
         warningTimer.restart()

@@ -442,3 +442,14 @@ Deno.test("localClientName: <hostname> client, sanitized", () => {
   assertEquals(M.localClientName("bad<b>host"), "badbhost client")
   assertEquals(M.localClientName(""), "Omarchy client")
 })
+
+Deno.test("passwordTargetMatches: a password is stored only for the exact server, port and user it was typed for", () => {
+  const s = { host: "snap.lan", port: 1705, username: "me" }
+  const t = M.passwordTarget(s)
+  assert(M.passwordTargetMatches(s, t))
+  assert(!M.passwordTargetMatches({ ...s, host: "other.lan" }, t))
+  assert(!M.passwordTargetMatches({ ...s, port: 1706 }, t))
+  assert(!M.passwordTargetMatches({ ...s, username: "you" }, t))
+  assert(!M.passwordTargetMatches(s, null))
+  assert(!M.passwordTargetMatches({ host: "", port: 1705, username: "" }, { host: "", port: 1705, username: "" }))
+})

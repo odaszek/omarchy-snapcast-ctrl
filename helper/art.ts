@@ -8,7 +8,10 @@
 //   "any"     any public http(s) host, e.g. Spotify's CDN. Off by default: it
 //             tells third parties what is playing. Loopback and private
 //             addresses other than the server stay blocked, so a hostile
-//             server can't point the helper at routers or local services.
+//             server can't point the helper at routers or local services:
+//             names are resolved here, every address must be public, and
+//             the request goes to that checked address (no second lookup
+//             that DNS rebinding could answer differently).
 //   "off"     no cover art.
 
 import type { Logger } from "./log.ts"
@@ -92,6 +95,138 @@ export function resolveArtUrl(artUrl: string, policy: string, serverHost: string
   return ""
 }
 
+const MAX_HEADER_BYTES = 32 * 1024
+
+/** A, AAAA and IP-literal resolution for a host name. */
+export async function resolveHost(host: string): Promise<string[]> {
+  const h = host.replace(/^\[|\]$/g, "")
+  if (/^[\d.]+$/.test(h) || h.includes(":")) return [h]
+  const [v4, v6] = await Promise.all([
+    Deno.resolveDns(h, "A").catch(() => [] as string[]),
+    Deno.resolveDns(h, "AAAA").catch(() => [] as string[]),
+  ])
+  return [...v4, ...v6]
+}
+
+function concat(chunks: Uint8Array[], size: number): Uint8Array {
+  const out = new Uint8Array(size)
+  let off = 0
+  for (const c of chunks) {
+    out.set(c, off)
+    off += c.length
+  }
+  return out
+}
+
+function dechunk(body: Uint8Array): Uint8Array {
+  const out: Uint8Array[] = []
+  let size = 0
+  let i = 0
+  const dec = new TextDecoder()
+  for (;;) {
+    let eol = i
+    while (eol + 1 < body.length && !(body[eol] === 13 && body[eol + 1] === 10)) eol++
+    if (eol + 1 >= body.length) throw new Error("truncated chunked body")
+    const len = parseInt(dec.decode(body.subarray(i, eol)).split(";")[0].trim(), 16)
+    if (!Number.isFinite(len) || len < 0) throw new Error("bad chunk size")
+    i = eol + 2
+    if (len === 0) return concat(out, size)
+    if (i + len > body.length) throw new Error("truncated chunk")
+    out.push(body.subarray(i, i + len))
+    size += len
+    i += len + 2
+  }
+}
+
+/**
+ * GET `url` from the already-checked address `ip` (HTTP/1.1, one request,
+ * no redirects). TLS still verifies the certificate for the URL's host name.
+ * The body is capped at `maxBytes`.
+ */
+export async function pinnedGet(url: URL, ip: string, signal: AbortSignal, maxBytes = MAX_ART_BYTES): Promise<Response> {
+  const https = url.protocol === "https:"
+  const port = url.port ? Number(url.port) : (https ? 443 : 80)
+  let conn: Deno.Conn = await Deno.connect({ hostname: ip, port })
+  const abort = () => {
+    try {
+      conn.close()
+    } catch { /* closed */ }
+  }
+  signal.addEventListener("abort", abort, { once: true })
+  try {
+    if (https) conn = await Deno.startTls(conn as Deno.TcpConn, { hostname: url.hostname.replace(/^\[|\]$/g, "") })
+    const req = "GET " + (url.pathname || "/") + url.search + " HTTP/1.1\r\nHost: " + url.host +
+      "\r\nUser-Agent: omarchy-snapcast-ctrl\r\nAccept: image/*\r\nAccept-Encoding: identity\r\nConnection: close\r\n\r\n"
+    const bytes = new TextEncoder().encode(req)
+    for (let off = 0; off < bytes.length;) off += await conn.write(bytes.subarray(off))
+    const chunks: Uint8Array[] = []
+    let size = 0
+    const buf = new Uint8Array(64 * 1024)
+    for (;;) {
+      let n: number | null
+      try {
+        n = await conn.read(buf)
+      } catch (e) {
+        // Many servers close TLS without close_notify; the body framing
+        // (Content-Length or chunked) below still catches truncation.
+        if (e instanceof Deno.errors.UnexpectedEof) break
+        throw e
+      }
+      if (n === null) break
+      size += n
+      if (size > maxBytes + MAX_HEADER_BYTES) throw new Error("response too large")
+      chunks.push(buf.slice(0, n))
+    }
+    const raw = concat(chunks, size)
+    let end = -1
+    for (let i = 0; i + 3 < raw.length && i < MAX_HEADER_BYTES; i++) {
+      if (raw[i] === 13 && raw[i + 1] === 10 && raw[i + 2] === 13 && raw[i + 3] === 10) {
+        end = i
+        break
+      }
+    }
+    if (end < 0) throw new Error("no HTTP header")
+    const lines = new TextDecoder().decode(raw.subarray(0, end)).split("\r\n")
+    const m = /^HTTP\/1\.[01] (\d{3})/.exec(lines[0])
+    if (!m) throw new Error("bad HTTP status line")
+    const status = Number(m[1])
+    const headers = new Headers()
+    for (const line of lines.slice(1)) {
+      const c = line.indexOf(":")
+      if (c > 0) headers.append(line.slice(0, c).trim(), line.slice(c + 1).trim())
+    }
+    let body = raw.subarray(end + 4)
+    if ((headers.get("transfer-encoding") ?? "").toLowerCase().includes("chunked")) body = dechunk(body)
+    else if (headers.has("content-length")) {
+      const len = Number(headers.get("content-length"))
+      if (!Number.isInteger(len) || len < 0 || len > body.length) throw new Error("truncated body")
+      body = body.subarray(0, len)
+    }
+    if (body.length > maxBytes) throw new Error("response too large")
+    headers.delete("transfer-encoding")
+    headers.set("content-length", String(body.length))
+    const nullBody = status === 204 || status === 205 || status === 304
+    return new Response(nullBody ? null : body.slice(), { status, headers })
+  } finally {
+    signal.removeEventListener("abort", abort)
+    abort()
+  }
+}
+
+/** True for http(s) URLs on the configured server's own HTTP port. */
+export function isServerUrl(url: string, serverHost: string, httpPort: number): boolean {
+  let u: URL
+  try {
+    u = new URL(url)
+  } catch {
+    return false
+  }
+  if (u.protocol !== "http:" && u.protocol !== "https:") return false
+  const port = u.port ? Number(u.port) : (u.protocol === "https:" ? 443 : 80)
+  const strip = (h: string) => h.toLowerCase().replace(/^\[|\]$/g, "")
+  return serverHost !== "" && strip(u.hostname) === strip(serverHost) && port === httpPort
+}
+
 async function sha256Hex(text: string): Promise<string> {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text))
   return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join("")
@@ -102,9 +237,15 @@ export class ArtCache {
   #log: Logger
   #inflight = new Map<string, Promise<string>>()
   #known = new Map<string, { path: string; at: number }>() // path "" = failed
+  /** Plain fetch, used only for `direct` URLs (the configured server). */
   fetcher: typeof fetch = fetch
   /** Decides whether a redirect target may be followed (same policy as the first URL). */
   allow: (url: string) => boolean = () => true
+  /** URLs fetched without the address check: the configured server's own HTTP port. */
+  direct: (url: string) => boolean = () => false
+  /** Every other host is resolved here and fetched from a checked public address. */
+  resolver: (host: string) => Promise<string[]> = resolveHost
+  pinnedFetcher: (url: URL, ip: string, signal: AbortSignal) => Promise<Response> = pinnedGet
 
   constructor(stateDir: string, log: Logger) {
     this.#dir = stateDir + "/art"
@@ -153,7 +294,7 @@ export class ArtCache {
       // Redirects are followed by hand so every hop passes the policy check.
       const signal = AbortSignal.timeout(TIMEOUT_MS)
       let target = url
-      let res = await this.fetcher(target, { signal, redirect: "manual" })
+      let res = await this.#request(target, signal)
       for (let hop = 0; res.status >= 300 && res.status < 400; hop++) {
         const location = res.headers.get("location")
         await res.body?.cancel()
@@ -169,7 +310,7 @@ export class ArtCache {
           return ""
         }
         target = next.href
-        res = await this.fetcher(target, { signal, redirect: "manual" })
+        res = await this.#request(target, signal)
       }
       if (!res.ok || !res.body) {
         await res.body?.cancel()
@@ -216,6 +357,31 @@ export class ArtCache {
       this.#log.debug("art: " + (e instanceof Error ? e.message : String(e)))
       return ""
     }
+  }
+
+  /**
+   * One request without following redirects. Anything but the configured
+   * server must resolve only to public addresses, and is fetched from the
+   * address that was checked.
+   */
+  async #request(target: string, signal: AbortSignal): Promise<Response> {
+    if (this.direct(target)) return this.fetcher(target, { signal, redirect: "manual" })
+    const u = new URL(target)
+    const host = u.hostname.replace(/^\[|\]$/g, "")
+    const addrs = await this.resolver(host)
+    if (addrs.length === 0) throw new Error("no address for " + host)
+    if (addrs.some((a) => isPrivateHost(a))) throw new Error("refused: " + host + " resolves to a private address")
+    // IPv4 first (resolveHost order); try the next address if one is unreachable.
+    let last: unknown = null
+    for (const a of addrs.slice(0, 4)) {
+      try {
+        return await this.pinnedFetcher(u, a, signal)
+      } catch (e) {
+        if (signal.aborted) throw e
+        last = e
+      }
+    }
+    throw last
   }
 
   async #prune(): Promise<void> {
